@@ -7,10 +7,11 @@ from imports import *
 
 class MEarthphotometry:
     
-    def __init__(self, outsuffix=''):
+    def __init__(self, outsuffix='', Prot=125.):
 
         # Add obvious stuff
         self.outsuffix = outsuffix
+        self.Prot = Prot
 
         # Get data from Zach's file
         d = np.loadtxt('data/2MASSJ10145184-4709244_tel13_2014-2015.txt')
@@ -19,11 +20,10 @@ class MEarthphotometry:
         self.emag = d[:,2]
         self.mag0 = d[:,4]  # zero-point mag (mag0 < -0.5 are suspicious)
         self.CM = d[:,17]   # common-mode; c(t)
-        self.data = d
-        
+                
         self.bjdbin()
         self.trimnbin()
-        self.optimize(p0=[.07, .07, 125.])
+        #self.optimize(p0=[.07, .07, 125.])
 
 
     def bjdbin(self, binwidth=4):
@@ -64,6 +64,35 @@ class MEarthphotometry:
         self.magtrimbin  = magbin
         self.emagtrimbin = emagbin
 
+    
+    def compute_periodogram(self):
+        '''Compute the Lomb-Scargle periodogram for the light curve 
+        using the Systemic software.'''
+        # Remove GJ1132b signal and save data
+        forsystemic = np.zeros((self.bjdtrim.size, 3))
+        forsystemic[:,0] = self.bjdtrim
+        forsystemic[:,1] = self.magtrim
+        forsystemic[:,2] = self.emagtrim
+        np.savetxt('/home/ryan/linux/Systemic/datafiles/MEarth.vels',
+                   forsystemic, delimiter='\t', fmt='%.6f')
+
+        # Run R script to compute periodogram and save data to a file
+        t0 = time.time()
+        os.system('Rscript periodogram.r')
+        print 'Computing the periodogram took %.3e minutes.'%((time.time()-t0)/60.)
+
+        # Get periodogram data
+        d = np.loadtxt('periodogram.dat')
+        self.periodogramP    = d[:,0]
+        self.periodogrampow  = d[:,1]
+        self.periodogramfaps = d[:,2]
+        d = np.loadtxt('peaks.dat')
+        self.peaksP    = d[:,0]
+        self.peaksfaps = d[:,1]
+        # Remove large unwanted files
+        os.system('rm periodogram.dat')
+        os.system('rm peaks.dat')
+
         
     def optimize(self, p0=None):
         '''Fit a three-parameter sinusoid model to the light curve.'''
@@ -77,6 +106,38 @@ class MEarthphotometry:
         self.optresultserr = np.sqrt(np.diag(c))
 
         
+    def plot_periodogram(self, label=False, pltt=False):
+        '''Plot the periodogram along with the of its significant 
+        peaks.'''
+        plt.figure(figsize=(11,6))
+        # Plot power spectrum
+        plt.plot(self.periodogramP, self.periodogrampow, 'k-')
+        # Highlight the actualy planet period
+        plt.plot(np.repeat(self.Prot,2),
+                 [0,np.ceil(max(self.periodogrampow))+1], 'b--')
+        # Highlight signficant peaks and their FAPs
+        for i in range(5):
+            # Get power at the low FAP periods
+            goodpow = np.where(np.abs(self.periodogramP-self.peaksP[i]) ==
+                               np.min(np.abs(self.periodogramP-
+                                             self.peaksP[i])))[0]
+            plt.plot([1,2e3], np.repeat(self.periodogrampow[goodpow],2),
+                     'k-', lw=.8)
+            plt.text(1e2+i*1e2, self.periodogrampow[goodpow]+6e-2,
+                     'FAP(P = %.3f) = %.3f'%(self.peaksP[i],
+                                             self.peaksfaps[i]), fontsize=11)
+        plt.xscale('log')
+        plt.xlim((1,2e3))
+        plt.xlabel('Period (days)')
+        plt.ylabel('Power (arbitrary units)')
+        plt.subplots_adjust(bottom=.12)
+        if label:
+            plt.savefig('plots/periodogram_'+self.outsuffix+'.png')
+        if pltt:
+            plt.show()
+        plt.close('all')
+
+
     def pickleobject(self):
         '''Save the complete object to a binary file.'''
         fObj = open('pickles/GJ1132_'+self.outsuffix, 'wb')
@@ -101,5 +162,12 @@ class MEarthphotometry:
 
 
 if __name__ == '__main__':
-    data = MEarthphotometry()
+    #data = MEarthphotometry()
+    #data.compute_periodogram()
+    #data.pickleobject()
 
+    f = open('pickles/GJ1132_', 'rb')
+    data = pickle.load(f)
+    f.close()
+
+    data.plot_periodogram(pltt=1)

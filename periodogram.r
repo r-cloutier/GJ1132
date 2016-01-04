@@ -13,12 +13,13 @@ k<-knew()
 kremove.data(k, 'all')
 k$mstar<-0.181
 k$epoch<-NaN
-datafile<-"/home/ryan/linux/Systemic/datafiles/simRV.vels"
+datafile<-"/home/ryan/linux/Systemic/datafiles/MEarth.vels"
 kadd.data(k, c(datafile))
 
 # Get periodogram and FAPs
-m<-kperiodogram.boot(k, per_type='res', trials=1e3,
-                     pmin=1, pmax=2e3)
+#m<-kperiodogram.boot(k, per_type='res', trials=1e3,
+#                     pmin=1, pmax=2e3)
+m<-kperiodogram(k, per_type='res', pmin=1, pmax=2e3)
 write.f(m, file='./periodogram.dat')
 
 # Get peaks
