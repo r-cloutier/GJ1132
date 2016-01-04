@@ -8,7 +8,7 @@ import GProt
 class MEarthphotometry:
     
     def __init__(self, outsuffix='', Prot=125., 
-                 thetagp=np.array((-2,2,-4,np.log(125),-4))):
+                 thetagp=np.array((-13,6,-9,5))):  #lnsgp was ~ -12
 
         # Add obvious stuff
         self.outsuffix = outsuffix
@@ -112,7 +112,7 @@ class MEarthphotometry:
         self.optresultserr = np.sqrt(np.diag(c))
 
         
-    def rungp(self, nsteps=2000, burnin=500, nwalkers=32):
+    def rungp(self, nsteps=2000, burnin=500, nwalkers=40):
         '''Model the light curve with a QP GP noise model and a 
         sinusoid.'''
         samples,lnprobs,vals=GProt.run_emcee_gp(self.thetagp, 
@@ -187,7 +187,7 @@ if __name__ == '__main__':
     #data.optimize(p0=[.07, .07, 125.])
     #data.compute_periodogram()
     #data.plot_periodogram(pltt=1)
-    data.rungp(nsteps=1000, burnin=200)
+    data.rungp(nsteps=1000, burnin=500)
     data.pickleobject()
 
     
