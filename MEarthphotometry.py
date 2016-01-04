@@ -8,7 +8,7 @@ import GProt
 class MEarthphotometry:
     
     def __init__(self, outsuffix='', Prot=125., 
-                 thetagp=np.array((-2,2,-4,np.log(125)))):
+                 thetagp=np.array((-2,2,-4,np.log(125),-4))):
 
         # Add obvious stuff
         self.outsuffix = outsuffix
@@ -33,14 +33,18 @@ class MEarthphotometry:
         bins = np.arange(min(self.bjd), max(self.bjd), binwidth)
         nbin = bins.size
         dig = np.digitize(self.bjd, bins)
-        magbin = np.array([np.mean(self.mag[dig == i]) for i in range(1,nbin)])
-        emagbin = np.array([np.std(self.mag[dig == i]) for i in range(1,nbin)])
-        binsv2 = np.array([np.mean([bins[i],bins[i+1]]) for i in range(nbin-1)])
-        self.bjdbin  = binsv2
-        self.magbin  = magbin
-        self.emagbin = emagbin
-
+        magbin = np.array([np.mean(self.mag[dig == i]) 
+                           for i in range(1, nbin)])
+        emagbin = np.array([np.std(self.mag[dig == i]) 
+                            for i in range(1, nbin)])
+        bjdbin = np.array([np.mean([bins[i],bins[i+1]]) 
+                           for i in range(nbin-1)])
+        good = np.where(np.isfinite(magbin))[0]
+        self.bjdbin = bjdbin[good]
+        self.magbin = magbin[good]        
+        self.emagbin = emagbin[good]
     
+
     def trimnbin(self, binwidth=4):
         '''Trim the timeseries to only include measurements with 
         mag0 > -0.5
@@ -59,11 +63,12 @@ class MEarthphotometry:
                            for i in range(1,nbin)])
         emagbin = np.array([np.std(self.magtrim[dig == i]) 
                             for i in range(1,nbin)])
-        binsv2 = np.array([np.mean([bins[i],bins[i+1]]) 
+        bjdbin = np.array([np.mean([bins[i],bins[i+1]]) 
                            for i in range(nbin-1)])
-        self.bjdtrimbin  = binsv2
-        self.magtrimbin  = magbin
-        self.emagtrimbin = emagbin
+        good = np.where(np.isfinite(magbin))[0]
+        self.bjdtrimbin  = bjdbin[good]
+        self.magtrimbin  = magbin[good]
+        self.emagtrimbin = emagbin[good]
 
     
     def compute_periodogram(self):
@@ -107,12 +112,16 @@ class MEarthphotometry:
         self.optresultserr = np.sqrt(np.diag(c))
 
         
-    def rungp(self, nsteps=2000, burnin=500):
+    def rungp(self, nsteps=2000, burnin=500, nwalkers=32):
         '''Model the light curve with a QP GP noise model and a 
         sinusoid.'''
-        samples,lnprobs,vals=GProt.run_emcee_gp(self.thetagp, self.bjdtrim,
-                                                self.magtrim, self.emagtrim,
-						nsteps=nsteps, burnin=burnin)
+        samples,lnprobs,vals=GProt.run_emcee_gp(self.thetagp, 
+                                                self.bjdtrimbin,
+                                                self.magtrimbin, 
+                                                self.emagtrimbin,
+                                                nsteps=nsteps,
+                                                burnin=burnin,
+                                                nwalkers=nwalkers)
         self.gpsamples = samples
         self.gplnprobs = lnprobs
         self.gpvals = vals
