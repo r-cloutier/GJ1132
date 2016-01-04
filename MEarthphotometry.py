@@ -5,6 +5,7 @@ by Zach.
 from imports import *
 import GProt
 
+
 class MEarthphotometry:
     
     def __init__(self, outsuffix='', Prot=125., 
