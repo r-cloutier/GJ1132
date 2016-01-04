@@ -3,15 +3,17 @@ Compute the full light curve for GJ 1132 using the MEarth photometry supplied
 by Zach.
 '''
 from imports import *
-
+import gps
 
 class MEarthphotometry:
     
-    def __init__(self, outsuffix='', Prot=125.):
+    def __init__(self, outsuffix='', Prot=125., 
+                 thetagp=np.array((-2,2,-4,np.log(125)))):
 
         # Add obvious stuff
         self.outsuffix = outsuffix
         self.Prot = Prot
+        self.thetagp = thetagp
 
         # Get data from Zach's file
         d = np.loadtxt('data/2MASSJ10145184-4709244_tel13_2014-2015.txt')
@@ -23,8 +25,7 @@ class MEarthphotometry:
                 
         self.bjdbin()
         self.trimnbin()
-        #self.optimize(p0=[.07, .07, 125.])
-
+        
 
     def bjdbin(self, binwidth=4):
         '''Bin a the timeseries in time with bins of size binwidth in 
@@ -98,12 +99,23 @@ class MEarthphotometry:
         '''Fit a three-parameter sinusoid model to the light curve.'''
         from scipy.optimize import curve_fit
         def sinemodel(x, As, Ac, Prot):
-            return As*np.sin(2*np.pi*x/Prot) + Ac*np.cos(2*np.pi*x/Prot)
+           return As*np.sin(2*np.pi*x/Prot) + Ac*np.cos(2*np.pi*x/Prot)
         p, c = curve_fit(sinemodel, self.bjdtrim, self.magtrim, 
                          p0=p0)
         self.optmodel = sinemodel(self.bjdtrim, p[0], p[1], p[2])
         self.optresults = p
         self.optresultserr = np.sqrt(np.diag(c))
+
+        
+    def rungp(self, nsteps=2000, burnin=500):
+        '''Model the light curve with a QP GP noise model and a 
+        sinusoid.'''
+        samples,lnprobs,vals=gps.run_emcee_gp(self.thetagp, self.bjdtrim,
+                                              self.magtrim, self.emagtrim,
+                                              nsteps=nsteps, burnin=burnin)
+        self.gpsamples = samples
+        self.gplnprobs = lnprobs
+        self.gpvals = vals
 
         
     def plot_periodogram(self, label=False, pltt=False):
@@ -162,12 +174,11 @@ class MEarthphotometry:
 
 
 if __name__ == '__main__':
-    #data = MEarthphotometry()
+    data = MEarthphotometry(outsuffix='testdummy')
+    #data.optimize(p0=[.07, .07, 125.])
     #data.compute_periodogram()
-    #data.pickleobject()
+    #data.plot_periodogram(pltt=1)
+    data.rungp()
+    data.pickleobject()
 
-    f = open('pickles/GJ1132_', 'rb')
-    data = pickle.load(f)
-    f.close()
-
-    data.plot_periodogram(pltt=1)
+    
