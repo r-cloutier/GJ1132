@@ -6,22 +6,24 @@ from imports import *
 import lcmodel
 
 
-def run_emcee_gp(params, bjd, mag, magerr, nsteps=2000, burnin=500):
-    '''params    = lna, lnl, lnw, lnP'''
+def run_emcee_gp(params, bjd, mag, magerr, Plims, nsteps=2000, burnin=500):
+    '''params    = lna, lnl, lnw, lnP
+    Plims = lnP_lowerlim, lnP_upperlim'''
 
     # Setup the GP
     a_gp,l_gp,w_gp,P_gp=np.exp(params)
     k1=kernels.ExpSquaredKernel(l_gp)
     k2=kernels.ExpSine2Kernel(w_gp,P_gp)
     kernel = a_gp*k1*k2
-    gp = george.GP(kernel)#, mean=np.mean(y))
+    gp = george.GP(kernel, solver=george.HODLRSolver)#, mean=np.mean(y))
     gp.compute(bjd, magerr)
 
-    def lnprob_gp(params):
+    def lnprob_gp(params, Plims):
         # Compute prior
-        print params
         lna_gp,lnl_gp,lnw_gp,lnP_gp=params
-        if -6 < lna_gp < 0 and 0 < lnl_gp < 15 and -15 < lnw_gp < 10 and 0 < lnP_gp < 6: # and 0 < As < .1 and 0 < Ac < .1 and 50 < Prot < 200: 
+        print Plims
+        lnPlow, lnPupp = Plims
+        if -20 < lna_gp < 20 and -20 < lnl_gp < 20 and -20 < lnw_gp < 20 and lnPlow < lnP_gp < lnPupp:
             lnprior = 0.0
         else:
             return -np.inf
@@ -29,7 +31,7 @@ def run_emcee_gp(params, bjd, mag, magerr, nsteps=2000, burnin=500):
         # Compute probability
         kernel.pars = np.exp(params)
         #model = lcmodel.get_lc1(params[4:], bjd)
-        return lnprior + gp.lnlikelihood(mag, quiet=1)
+        return lnprior + gp.lnlikelihood(mag, quiet=True)
 
 
     # Initialize walkers in the parameter space
@@ -37,7 +39,7 @@ def run_emcee_gp(params, bjd, mag, magerr, nsteps=2000, burnin=500):
     p0=[params + 1e-4*np.random.randn(ndim) for i in range(nwalkers)]
     
     # Initialize sampler
-    sampler=emcee.EnsembleSampler(nwalkers, ndim, lnprob_gp)#, pool=Pool())
+    sampler=emcee.EnsembleSampler(nwalkers, ndim, lnprob_gp, args=(Plims))#, pool=Pool())
     
     print 'Running first Burnin (GP)...'
     t0=time.time()

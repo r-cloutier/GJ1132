@@ -3,7 +3,7 @@ Compute the full light curve for GJ 1132 using the MEarth photometry supplied
 by Zach.
 '''
 from imports import *
-import gps
+import GProt
 
 class MEarthphotometry:
     
