@@ -110,9 +110,9 @@ class MEarthphotometry:
     def rungp(self, nsteps=2000, burnin=500):
         '''Model the light curve with a QP GP noise model and a 
         sinusoid.'''
-        samples,lnprobs,vals=gps.run_emcee_gp(self.thetagp, self.bjdtrim,
-                                              self.magtrim, self.emagtrim,
-                                              nsteps=nsteps, burnin=burnin)
+        samples,lnprobs,vals=GProt.run_emcee_gp(self.thetagp, self.bjdtrim,
+                                                self.magtrim, self.emagtrim,
+						nsteps=nsteps, burnin=burnin)
         self.gpsamples = samples
         self.gplnprobs = lnprobs
         self.gpvals = vals
@@ -178,7 +178,7 @@ if __name__ == '__main__':
     #data.optimize(p0=[.07, .07, 125.])
     #data.compute_periodogram()
     #data.plot_periodogram(pltt=1)
-    data.rungp()
+    data.rungp(nsteps=1000, burnin=200)
     data.pickleobject()
 
     
