@@ -187,7 +187,7 @@ if __name__ == '__main__':
     #data.optimize(p0=[.07, .07, 125.])
     #data.compute_periodogram()
     #data.plot_periodogram(pltt=1)
-    data.rungp(nsteps=1000, burnin=500)
+    data.rungp(nsteps=1400, burnin=700)
     data.pickleobject()
 
     

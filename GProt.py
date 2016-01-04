@@ -63,7 +63,7 @@ def run_emcee_gp(params, bjd, mag, magerr, nsteps=2000, burnin=500,
     sampler.reset()
 
     print 'Running MCMC (GP)...'
-    p0,_,_=sampler.run_mcmc(p0, nsteps)
+    p0,_,_ = `sampler.run_mcmc(p0, nsteps)
     lnprobs = np.append(lnprobs, np.mean(sampler.lnprobability,axis=0))
     
     print "Mean acceptance fraction:", np.mean(sampler.acceptance_fraction)
