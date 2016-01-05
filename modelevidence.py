@@ -5,7 +5,6 @@ for the input light curve.
 from imports import *
 from MEarthphotometry import *
 
-
 class modelevidence:
 
     def __init__(self, 
