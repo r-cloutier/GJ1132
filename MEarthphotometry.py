@@ -19,7 +19,7 @@ class MEarthphotometry:
         self.Prot = Prot
         self.GPonly = GPonly
         if thetagp == None:
-            thetagp = np.array((-11,5,1,np.log(125),.02,.02,125))
+            thetagp = np.array((-11,5,.1,np.log(125),.02,.02,125))
         else:
             thetagp = thetagp
         if self.GPonly:
@@ -92,7 +92,7 @@ class MEarthphotometry:
         forsystemic[:,0] = self.bjdtrim
         forsystemic[:,1] = self.magtrim
         forsystemic[:,2] = self.emagtrim
-        np.savetxt('/home/cloutier/linux/Systemic/datafiles/MEarth.vels',
+        np.savetxt('/home/ryan/linux/Systemic/datafiles/MEarth.vels',
                    forsystemic, delimiter='\t', fmt='%.6f')
 
         # Run R script to compute periodogram and save data to a file
@@ -270,11 +270,12 @@ class MEarthphotometry:
 
 
 if __name__ == '__main__':
-    data = MEarthphotometry(outsuffix='testdummy_gpplussine_lc1', GPonly=0) 
+    data = MEarthphotometry(outsuffix='testdummy_gponly', GPonly=1) 
+
     #data.optimize(p0=[.07, .07, 125.])
     #data.compute_periodogram()
     #data.plot_periodogram(pltt=1)
-    data.rungp(nsteps=2000, burnin=200, nwalkers=160)
+    data.rungp(nsteps=1000, burnin=200, nwalkers=160)
     data.plot_GPsummary(label=1, pltt=1)
     data.plot_GPmodel(label=1, pltt=1)
     data.pickleobject()

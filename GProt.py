@@ -6,18 +6,19 @@ from imports import *
 
 def lnlike(params, bjd, mag, magerr):
     a_gp, l_gp, G_gp, P_gp = np.exp(params)
-    k1 = kernels.ExpSquaredKernel(l_gp)
+    #k1 = kernels.ExpSquaredKernel(l_gp)
+    k1 = kernels.Matern32Kernel(l_gp)
     k2 = kernels.ExpSine2Kernel(G_gp, P_gp)
     kernel = a_gp*k1*k2
     gp = george.GP(kernel, solver=george.HODLRSolver)
     try:
         gp.compute(bjd, magerr)
     except (ValueError, np.linalg.LinAlgError):
-        return 1e26
+        return -np.inf
     return gp.lnlikelihood(mag, quiet=True)
 
 
-def lnprior(params, Plims=np.log(np.array((50, 200)))):
+def lnprior(params, Plims=np.log(np.array((70, 160)))):
     lna_gp, lnl_gp, lnG_gp, lnP_gp = params
     lnP_low, lnP_upp = Plims
     if -20 < lna_gp < 20 and lnP_gp < lnl_gp < 20 and \
