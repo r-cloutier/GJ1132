@@ -1,27 +1,31 @@
 '''
-Model the lightcurve with a QP GP.
+Model the lightcurve with a GP plus a sinusoid model.
 '''
 from imports import *
+import lcmodel
 
 
 def lnlike(params, bjd, mag, magerr):
-    a_gp, l_gp, G_gp, P_gp = np.exp(params)
+    a_gp, l_gp = np.exp(params[:2])
     k1 = kernels.ExpSquaredKernel(l_gp)
-    k2 = kernels.ExpSine2Kernel(G_gp, P_gp)
-    kernel = a_gp*k1*k2
+    kernel = a_gp*k1
     gp = george.GP(kernel, solver=george.HODLRSolver)
     try:
         gp.compute(bjd, magerr)
     except (ValueError, np.linalg.LinAlgError):
         return 1e26
-    return gp.lnlikelihood(mag, quiet=True)
+    model = lcmodel.get_lc1(params[2:], bjd)
+    return gp.lnlikelihood(mag-model, quiet=True)
 
 
-def lnprior(params, Plims=np.log(np.array((50, 200)))):
-    lna_gp, lnl_gp, lnG_gp, lnP_gp = params
-    lnP_low, lnP_upp = Plims
-    if -20 < lna_gp < 20 and lnP_gp < lnl_gp < 20 and \
-       -20 < lnG_gp < 20 and lnP_low < lnP_gp < lnP_upp:
+# Plims are based on the LS-periodogram
+def lnprior(params, Plims=np.log(np.array((70, 160)))):
+    lna_gp, lnl_gp = params[:2]
+    P_low, P_upp = np.exp(Plims)
+    As, Ac, Prot = params[2:]
+    if -20 < lna_gp < 20 and -20 < lnl_gp < 20 and \
+       -.05 < As < .05 and -.05 < Ac < .05 and \
+       P_low < Prot < P_upp:
         return 0.0
     else:
         return -np.inf
@@ -33,7 +37,7 @@ def lnprob(params, bjd, mag, magerr):
 
 def run_emcee_gp(params, bjd, mag, magerr, nsteps=2000, burnin=500,
                  nwalkers=100):
-    '''params    = lna, lnl, lnG, lnP'''
+    '''params    = lna, lnl, A, phi, Prot'''
 
     # Initialize walkers in the parameter space
     ndim = len(params)

@@ -3,18 +3,30 @@ Compute the full light curve for GJ 1132 using the MEarth photometry supplied
 by Zach.
 '''
 from imports import *
-import GProt
+import lcmodel
 
 
 class MEarthphotometry:
     
-    def __init__(self, outsuffix='', Prot=125., 
-                 thetagp=np.array((-13,6,-9,5))):  #lnsgp was ~ -12
+    def __init__(self, outsuffix='', Prot=125., thetagp=None,
+                 GPonly=True):
+        '''GPonly = boolean indicating whether or not to model the light
+        curve as a QP GP or a GP (prbly a squared exponential) plus a 
+        sine wave.''' 
 
         # Add obvious stuff
         self.outsuffix = outsuffix
         self.Prot = Prot
-        self.thetagp = thetagp
+        self.GPonly = GPonly
+        if thetagp == None:
+            thetagp = np.array((-11,5,1,np.log(125),.02,.02,125))
+        else:
+            thetagp = thetagp
+        if self.GPonly:
+            self.thetagp = thetagp[:4]
+        else:
+            self.thetagp = thetagp[np.array((0,1,4,5,6))]
+    
 
         # Get data from Zach's file
         d = np.loadtxt('data/2MASSJ10145184-4709244_tel13_2014-2015.txt')
@@ -80,7 +92,7 @@ class MEarthphotometry:
         forsystemic[:,0] = self.bjdtrim
         forsystemic[:,1] = self.magtrim
         forsystemic[:,2] = self.emagtrim
-        np.savetxt('/home/ryan/linux/Systemic/datafiles/MEarth.vels',
+        np.savetxt('/home/cloutier/linux/Systemic/datafiles/MEarth.vels',
                    forsystemic, delimiter='\t', fmt='%.6f')
 
         # Run R script to compute periodogram and save data to a file
@@ -116,18 +128,36 @@ class MEarthphotometry:
     def rungp(self, nsteps=2000, burnin=500, nwalkers=40):
         '''Model the light curve with a QP GP noise model and a 
         sinusoid.'''
-        samples,lnprobs,vals=GProt.run_emcee_gp(self.thetagp, 
-                                                self.bjdtrimbin,
-                                                self.magtrimbin, 
-                                                self.emagtrimbin,
-                                                nsteps=nsteps,
-                                                burnin=burnin,
-                                                nwalkers=nwalkers)
+        if self.GPonly:
+            import GProt as gps
+        else:
+            import GPsinerot as gps
+        samples,lnprobs,vals=gps.run_emcee_gp(self.thetagp, 
+                                              self.bjdtrimbin,
+                                              self.magtrimbin, 
+                                              self.emagtrimbin,
+                                              nsteps=nsteps,
+                                              burnin=burnin,
+                                              nwalkers=nwalkers)
         self.gpsamples = samples
         self.gplnprobs = lnprobs
         self.gpvals = vals
 
-        
+        # Get best-fit parameters
+        nparam = self.thetagp.size
+        params = np.zeros(nparam)
+        for i in range(nparam):
+            y,x,p = plt.hist(self.gpsamples[:,i], bins=40)
+            params[i] = x[y == max(y)]
+            plt.close('all')
+        if self.GPonly:
+            self.hyperparams = params
+            self.mcmcparams  = None
+        else:
+            self.hyperparams = params[:2]
+            self.mcmcparams  = params[2:]
+
+
     def plot_periodogram(self, label=False, pltt=False):
         '''Plot the periodogram along with the of its significant 
         peaks.'''
@@ -135,16 +165,14 @@ class MEarthphotometry:
         # Plot power spectrum
         plt.plot(self.periodogramP, self.periodogrampow, 'k-')
         # Highlight the actualy planet period
-        plt.plot(np.repeat(self.Prot,2),
-                 [0,np.ceil(max(self.periodogrampow))+1], 'b--')
+        plt.axvline(self.Prot, color='b', ls='--')
         # Highlight signficant peaks and their FAPs
         for i in range(5):
             # Get power at the low FAP periods
             goodpow = np.where(np.abs(self.periodogramP-self.peaksP[i]) ==
                                np.min(np.abs(self.periodogramP-
                                              self.peaksP[i])))[0]
-            plt.plot([1,2e3], np.repeat(self.periodogrampow[goodpow],2),
-                     'k-', lw=.8)
+            plt.axhline(self.periodogrampow[goodpow], color='k', ls='-', lw=.8)
             plt.text(1e2+i*1e2, self.periodogrampow[goodpow]+6e-2,
                      'FAP(P = %.3f) = %.3f'%(self.peaksP[i],
                                              self.peaksfaps[i]), fontsize=11)
@@ -159,6 +187,79 @@ class MEarthphotometry:
             plt.show()
         plt.close('all')
 
+        
+    def plot_GPsummary(self, label=False, pltt=False):
+        '''Make a corner plot of the GP parameter posteriors and the evolution 
+        of the lnprobability = lnlikelihood + lnprior'''
+        plt.figure('lnlike')
+        plt.plot(self.gplnprobs, 'ko-')
+        nwalkers, burnin, nsteps = self.gpvals
+        plt.axvline(burnin, color='k', ls='--')
+        plt.xlabel('Step Number')
+        plt.ylabel('lnlikelihood')
+        if label:
+            plt.savefig('plots/gplnprob_'+self.outsuffix+'.png')
+        
+        # Next plot
+        corner.corner(self.gpsamples, bins=40)
+        if label:
+            plt.savefig('plots/gptri_'+self.outsuffix+'.png')
+        if pltt:
+            plt.show()
+        plt.close('all')
+
+    
+    def plot_GPmodel(self, label=False, pltt=False):
+        '''Plot the lightcurve and the best-fit (most likely) GP model.'''
+        if self.GPonly:
+            # Compute GP model
+            a_gp, l_gp, G_gp, P_gp = np.exp(self.hyperparams)
+            k1 = kernels.ExpSquaredKernel(l_gp)
+            k2 = kernels.ExpSine2Kernel(G_gp, P_gp)
+            kernel = a_gp*k1*k2
+            gp = george.GP(kernel, solver=george.HODLRSolver)
+            gp.compute(self.bjdtrimbin, self.emagtrimbin)
+            x = np.linspace(min(self.bjd), max(self.bjd), 3e2)
+            mu, cov = gp.predict(self.magtrimbin, x)
+            std = np.sqrt(np.diag(cov))
+            
+        else:
+            # Compute GP model
+            a_gp, l_gp = np.exp(self.hyperparams)
+            k1 = kernels.ExpSquaredKernel(l_gp)
+            kernel = a_gp*k1
+            gp = george.GP(kernel, solver=george.HODLRSolver)
+            gp.compute(self.bjdtrimbin, self.emagtrimbin)
+            x = np.linspace(min(self.bjd), max(self.bjd), 3e2)
+            #mu, cov = gp.predict(self.magtrimbin, x)
+            modelsmall = lcmodel.get_lc1(self.mcmcparams, self.bjdtrimbin)
+            modellarge = lcmodel.get_lc1(self.mcmcparams, x)
+            samples = gp.sample_conditional(self.magtrimbin - modelsmall, 
+                                            x, size=100)
+            mu = np.mean(samples, axis=0) + modellarge
+            std = np.std(samples, axis=0) + modellarge
+        self.modelbjd = x
+        self.model = mu
+        self.modelerr = std
+
+        # Plot data and model
+        plt.close('all')
+        plt.plot(self.bjdtrim, self.magtrim, 'k.', alpha=.1)
+        plt.errorbar(self.bjdtrimbin, self.magtrimbin, self.emagtrimbin, 
+                     fmt='bo')
+        plt.plot(x, mu, 'g-', lw=2)
+        plt.plot(x, mu+std, 'g--', lw=1.5)
+        plt.plot(x, mu-std, 'g--', lw=1.5)
+
+        plt.gca().invert_yaxis()
+        plt.xlabel('BJD')
+        plt.ylabel('Differential Magnitude')
+        if label:
+            plt.savefig('plots/gpmodel_'+self.outsuffix+'.png')
+        if pltt:
+            plt.show()
+        plt.close('all')
+
 
     def pickleobject(self):
         '''Save the complete object to a binary file.'''
@@ -166,29 +267,16 @@ class MEarthphotometry:
         pickle.dump(self, fObj)
         fObj.close()
 
-    
-    def quickplot(self):
-        #plt.errorbar(self.bjd, self.mag, self.emag, fmt='k.')
-        #plt.errorbar(self.bjdbin, self.magbin, self.emagbin, fmt='bo')
-        #plt.gca().invert_yaxis()
-        plt.figure(2)
-        plt.errorbar(self.bjdtrim, self.magtrim, self.emagtrim, 
-                     fmt='k.')
-        plt.errorbar(self.bjdtrimbin, self.magtrimbin, 
-                     self.emagtrimbin, fmt='bo')
-        plt.plot(self.bjdtrim, self.optmodel, 'g-')
-        print self.optresults, self.optresultserr
-        plt.gca().invert_yaxis()
-        plt.show()
-        
 
 
 if __name__ == '__main__':
-    data = MEarthphotometry(outsuffix='testdummy')
+    data = MEarthphotometry(outsuffix='testdummy_gpplussine_lc1', GPonly=0) 
     #data.optimize(p0=[.07, .07, 125.])
     #data.compute_periodogram()
     #data.plot_periodogram(pltt=1)
-    data.rungp(nsteps=1400, burnin=700)
+    data.rungp(nsteps=2000, burnin=200, nwalkers=160)
+    data.plot_GPsummary(label=1, pltt=1)
+    data.plot_GPmodel(label=1, pltt=1)
     data.pickleobject()
 
     

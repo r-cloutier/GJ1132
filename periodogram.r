@@ -4,7 +4,7 @@
 # dataset and return the periodogram and FAPs.
 
 # Get systemic functions
-source('/home/ryan/linux/Systemic/R/systemic.r',chdir=TRUE)
+source('~/linux/Systemic/R/systemic.r',chdir=TRUE)
 
 # Initialize a kernel
 k<-knew()
@@ -13,7 +13,7 @@ k<-knew()
 kremove.data(k, 'all')
 k$mstar<-0.181
 k$epoch<-NaN
-datafile<-"/home/ryan/linux/Systemic/datafiles/MEarth.vels"
+datafile<-"~/linux/Systemic/datafiles/MEarth.vels"
 kadd.data(k, c(datafile))
 
 # Get periodogram and FAPs
