@@ -1,13 +1,7 @@
 *~
 *pyc
-<<<<<<< HEAD
 /data
 /pickles
 /plots
-=======
-data/*
-pickles
-plots
->>>>>>> 093e9a8804bd86d247d0d68a9f3de0dc4f123c85
 *tmp*
 notes
