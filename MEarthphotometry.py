@@ -129,7 +129,7 @@ class MEarthphotometry:
         '''Model the light curve with a QP GP noise model and a 
         sinusoid.'''
         if self.GPonly:
-            import GProt as gps
+            import GProtraw as gps
         else:
             import GPsinerot as gps
         samples,lnprobs,vals=gps.run_emcee_gp(self.thetagp, 
@@ -275,7 +275,7 @@ if __name__ == '__main__':
     #data.optimize(p0=[.07, .07, 125.])
     #data.compute_periodogram()
     #data.plot_periodogram(pltt=1)
-    data.rungp(nsteps=1000, burnin=200, nwalkers=160)
+    data.rungp(nsteps=2000, burnin=1000, nwalkers=40)
     data.plot_GPsummary(label=1, pltt=1)
     data.plot_GPmodel(label=1, pltt=1)
     data.pickleobject()

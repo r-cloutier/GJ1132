@@ -3,18 +3,31 @@ Model the lightcurve with a QP GP.
 '''
 from imports import *
 
+def kernel(params, bjdi, bjdj):
+    a_gp, l_gp, G_gp, P_gp = np.exp(params)
+    k1 = -(bjdi-bjdj)**2/(2*l_gp**2)
+    k2 = -G_gp*np.sin(np.pi*(bjdi-bjdj)/P_gp)**2
+    return a_gp*np.exp(k1+k2)
 
 def lnlike(params, bjd, mag, magerr):
-    a_gp, l_gp, G_gp, P_gp = np.exp(params)
-    k1 = kernels.ExpSquaredKernel(l_gp)
-    k2 = kernels.ExpSine2Kernel(G_gp, P_gp)
-    kernel = a_gp*k1*k2
-    gp = george.GP(kernel)#, solver=george.HODLRSolver)
-    try:
-        gp.compute(bjd, magerr)
-    except (ValueError, np.linalg.LinAlgError):
-        return -np.inf
-    return gp.lnlikelihood(mag, quiet=True)
+    # Compute covariance matrix
+    N = bjd.size
+    K = np.zeros((N,N))
+    for i in range(N):
+        for j in range(N):
+            if i == j:
+                delta = 1
+            else:
+                delta = 0
+            K[i,j] = magerr[i]*delta + kernel(params, bjd[i], bjd[j])
+    # Compute inverse of K
+    Kinv = np.linalg.inv(K)
+    # Compute determinant of K
+    Kdet = np.linalg.det(K)
+    ll = -.5*np.dot(np.dot(bjd.T, Kinv), bjd) - \
+               .5*np.log(Kdet) - \
+                    .5*N*np.log(2*np.pi)
+    return ll
 
 
 def lnprior(params, Plims=np.log(np.array((70, 160)))):
