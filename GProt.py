@@ -5,30 +5,40 @@ from imports import *
 
 
 def lnlike(params, bjd, mag, magerr):
-    a_gp, l_gp, G_gp, P_gp = np.exp(params)
+    a_gp, l_gp, G_gp, P_gp = params
     k1 = kernels.ExpSquaredKernel(l_gp)
     k2 = kernels.ExpSine2Kernel(G_gp, P_gp)
     kernel = a_gp*k1*k2
-    gp = george.GP(kernel)#, solver=george.HODLRSolver)
+    gp = george.GP(kernel, solver=george.HODLRSolver)
     try:
         gp.compute(bjd, magerr)
     except (ValueError, np.linalg.LinAlgError):
         return -np.inf
-    return gp.lnlikelihood(mag, quiet=True)
+    #r = np.ascontiguousarray(gp._check_dimensions(mag)[gp.inds],
+    #                         dtype=np.float64)
+    #Kinv = gp.solver.apply_inverse(r)
+    #ll = gp._const - .5*np.dot(r, Kinv)
+    ll2 = gp.lnlikelihood(mag, quiet=True)
+    #print ll, ll2
+    return ll2
 
 
 def lnprior(params, Plims=np.log(np.array((70, 160)))):
     lna_gp, lnl_gp, lnG_gp, lnP_gp = params
     lnP_low, lnP_upp = Plims
-    if -20 < lna_gp < 20 and lnP_gp < lnl_gp < 20 and \
-       -20 < lnG_gp < 4 and lnP_low < lnP_gp < lnP_upp:
+    #if -20 < lna_gp < 20 and lnP_gp < lnl_gp < 20 and \
+    #   -20 < lnG_gp < 4 and -20 < lnP_gp < 20:
+    if 0 < lna_gp < 1 and lnP_gp < lnl_gp < 1e4 and \
+       0 < lnG_gp < 1e2 and 0 < lnP_gp < 200:
         return 0.0
     else:
         return -np.inf
 
 
 def lnprob(params, bjd, mag, magerr):
-    return lnprior(params) + lnlike(params, bjd, mag, magerr)
+    ll = lnlike(params, bjd, mag, magerr)
+    lp = lnprior(params)
+    return lp + ll
 
 
 def run_emcee_gp(params, bjd, mag, magerr, nsteps=2000, burnin=500,
@@ -45,9 +55,9 @@ def run_emcee_gp(params, bjd, mag, magerr, nsteps=2000, burnin=500,
     
     print 'Running first Burnin (GP)...'
     t0=time.time()
+    lnprobs = np.zeros(0)
     p0,_,_ = sampler.run_mcmc(p0, burnin)
     # Save the lnprob to check if the chain converges
-    lnprobs = np.zeros(0)
     lnprobs = np.append(lnprobs, np.mean(sampler.lnprobability,axis=0))
     print 'Burnin acceptance fraction is %.5f' % \
         np.mean(sampler.acceptance_fraction)

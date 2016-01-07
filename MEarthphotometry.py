@@ -129,10 +129,10 @@ class MEarthphotometry:
         '''Model the light curve with a QP GP noise model and a 
         sinusoid.'''
         if self.GPonly:
-            import GProtraw as gps
+            import GProt as gps
         else:
             import GPsinerot as gps
-        samples,lnprobs,vals=gps.run_emcee_gp(self.thetagp, 
+        samples,lnprobs,vals=gps.run_emcee_gp(np.exp(self.thetagp), 
                                               self.bjdtrimbin,
                                               self.magtrimbin, 
                                               self.emagtrimbin,
@@ -213,7 +213,7 @@ class MEarthphotometry:
         '''Plot the lightcurve and the best-fit (most likely) GP model.'''
         if self.GPonly:
             # Compute GP model
-            a_gp, l_gp, G_gp, P_gp = np.exp(self.hyperparams)
+            a_gp, l_gp, G_gp, P_gp = self.hyperparams #np.exp(self.hyperparams)
             k1 = kernels.ExpSquaredKernel(l_gp)
             k2 = kernels.ExpSine2Kernel(G_gp, P_gp)
             kernel = a_gp*k1*k2
@@ -225,7 +225,7 @@ class MEarthphotometry:
             
         else:
             # Compute GP model
-            a_gp, l_gp = np.exp(self.hyperparams)
+            a_gp, l_gp = self.hyperparams #np.exp(self.hyperparams)
             k1 = kernels.ExpSquaredKernel(l_gp)
             kernel = a_gp*k1
             gp = george.GP(kernel, solver=george.HODLRSolver)
@@ -275,7 +275,7 @@ if __name__ == '__main__':
     #data.optimize(p0=[.07, .07, 125.])
     #data.compute_periodogram()
     #data.plot_periodogram(pltt=1)
-    data.rungp(nsteps=2000, burnin=1000, nwalkers=40)
+    data.rungp(nsteps=500, burnin=200, nwalkers=36)
     data.plot_GPsummary(label=1, pltt=1)
     data.plot_GPmodel(label=1, pltt=1)
     data.pickleobject()
