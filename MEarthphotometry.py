@@ -156,7 +156,7 @@ class MEarthphotometry:
         else:
             self.hyperparams = params[:2]
             self.mcmcparams  = params[2:]
-
+        
 
     def plot_periodogram(self, label=False, pltt=False):
         '''Plot the periodogram along with the of its significant 

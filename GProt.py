@@ -14,22 +14,16 @@ def lnlike(params, bjd, mag, magerr):
         gp.compute(bjd, magerr)
     except (ValueError, np.linalg.LinAlgError):
         return -np.inf
-    #r = np.ascontiguousarray(gp._check_dimensions(mag)[gp.inds],
-    #                         dtype=np.float64)
-    #Kinv = gp.solver.apply_inverse(r)
-    #ll = gp._const - .5*np.dot(r, Kinv)
-    ll2 = gp.lnlikelihood(mag, quiet=True)
-    #print ll, ll2
-    return ll2
+    return gp.lnlikelihood(mag, quiet=True)
 
 
-def lnprior(params, Plims=np.log(np.array((70, 160)))):
+def lnprior(params, Plims=np.array((70, 160))):
     lna_gp, lnl_gp, lnG_gp, lnP_gp = params
     lnP_low, lnP_upp = Plims
     #if -20 < lna_gp < 20 and lnP_gp < lnl_gp < 20 and \
     #   -20 < lnG_gp < 4 and -20 < lnP_gp < 20:
     if 0 < lna_gp < 1 and lnP_gp < lnl_gp < 1e4 and \
-       0 < lnG_gp < 1e2 and 0 < lnP_gp < 200:
+       0 < lnG_gp < 1e2 and 0 < lnP_gp < 1:  
         return 0.0
     else:
         return -np.inf
