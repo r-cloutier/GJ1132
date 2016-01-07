@@ -18,12 +18,12 @@ def lnlike(params, bjd, mag, magerr):
 
 
 def lnprior(params, Plims=np.array((70, 160))):
-    lna_gp, lnl_gp, lnG_gp, lnP_gp = params
-    lnP_low, lnP_upp = Plims
-    #if -20 < lna_gp < 20 and lnP_gp < lnl_gp < 20 and \
-    #   -20 < lnG_gp < 4 and -20 < lnP_gp < 20:
-    if 0 < lna_gp < 1 and lnP_gp < lnl_gp < 1e4 and \
-       0 < lnG_gp < 1e2 and 0 < lnP_gp < 1:  
+    a_gp, l_gp, G_gp, P_gp = params
+    P_low, P_upp = Plims
+    #if 0 < a_gp and P_gp < l_gp < 1e4 and \
+    #   0 < G_gp < 30 and P_low < P_gp < P_upp:  
+    if P_gp < l_gp < 1e4 and \
+       G_gp < 30 and P_low < P_gp < P_upp:  
         return 0.0
     else:
         return -np.inf
@@ -37,12 +37,16 @@ def lnprob(params, bjd, mag, magerr):
 
 def run_emcee_gp(params, bjd, mag, magerr, nsteps=2000, burnin=500,
                  nwalkers=100):
-    '''params    = lna, lnl, lnG, lnP'''
-
+    '''params    = a, l, G, P'''
     # Initialize walkers in the parameter space
     ndim = len(params)
-    p0=[params + 1e-4*np.random.randn(ndim) for i in range(nwalkers)]
-    
+    #p0=[params + 1e-1*np.random.randn(ndim) for i in range(nwalkers)]
+    a, l , G, P = params
+    p0 = [[a+1e-5*np.random.randn(),
+           l+1e-1*np.random.randn(),
+           G+1e-4*np.random.randn(),
+           P+1e-1*np.random.randn()] for i in range(nwalkers)]
+
     # Initialize sampler
     args = (bjd, mag, magerr)
     sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=args)
@@ -56,7 +60,7 @@ def run_emcee_gp(params, bjd, mag, magerr, nsteps=2000, burnin=500,
     print 'Burnin acceptance fraction is %.5f' % \
         np.mean(sampler.acceptance_fraction)
     print 'Burnin took %.4e minutes'%((time.time()-t0)/60.)
-    #sampler.reset()
+    sampler.reset()
 
     #print 'Running second Burnin (GP)...'
     #p0,_,_ = sampler.run_mcmc(p0, int(burnin/2))

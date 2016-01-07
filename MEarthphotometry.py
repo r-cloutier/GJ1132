@@ -19,7 +19,7 @@ class MEarthphotometry:
         self.Prot = Prot
         self.GPonly = GPonly
         if thetagp == None:
-            thetagp = np.array((-11,5,.1,np.log(125),.02,.02,125))
+            thetagp = np.exp(np.array((-11,5,.1,np.log(125),.02,.02,125)))
         else:
             thetagp = thetagp
         if self.GPonly:
@@ -27,8 +27,7 @@ class MEarthphotometry:
         else:
             self.thetagp = thetagp[np.array((0,1,4,5,6))]
     
-
-        # Get data from Zach's file
+        # Get MEarth photometric data
         d = np.loadtxt('data/2MASSJ10145184-4709244_tel13_2014-2015.txt')
         self.bjd = d[:,0]
         self.mag = d[:,1]
@@ -125,14 +124,15 @@ class MEarthphotometry:
         self.optresultserr = np.sqrt(np.diag(c))
 
         
-    def rungp(self, nsteps=2000, burnin=500, nwalkers=40):
+    def runqpgp(self, nsteps=2000, burnin=500, nwalkers=40):
         '''Model the light curve with a QP GP noise model and a 
         sinusoid.'''
         if self.GPonly:
-            import GProt as gps
+            import GProt as gps 
         else:
             import GPsinerot as gps
-        samples,lnprobs,vals=gps.run_emcee_gp(np.exp(self.thetagp), 
+        # First pass
+        samples,lnprobs,vals=gps.run_emcee_gp(self.thetagp, 
                                               self.bjdtrimbin,
                                               self.magtrimbin, 
                                               self.emagtrimbin,
@@ -144,11 +144,12 @@ class MEarthphotometry:
         self.gpvals = vals
 
         # Get best-fit parameters
-        nparam = self.thetagp.size
+        nparam = self.gpsamples.shape[1]
         params = np.zeros(nparam)
         for i in range(nparam):
             y,x,p = plt.hist(self.gpsamples[:,i], bins=40)
-            params[i] = x[y == max(y)]
+            good = np.where(y == max(y))[0][0]
+            params[i] = np.mean((x[good], x[good+1]))
             plt.close('all')
         if self.GPonly:
             self.hyperparams = params
@@ -272,10 +273,15 @@ class MEarthphotometry:
 if __name__ == '__main__':
     data = MEarthphotometry(outsuffix='testdummy_gponly', GPonly=1) 
 
-    #data.optimize(p0=[.07, .07, 125.])
+    # Try and find periodicities via LS-periodogram
     #data.compute_periodogram()
-    #data.plot_periodogram(pltt=1)
-    data.rungp(nsteps=500, burnin=200, nwalkers=36)
+    #data.plot_periodogram(label=1, pltt=0)
+    
+    # Fit stuff
+    data.runqpgp(nsteps=1000, burnin=200, nwalkers=36)
+    data
+
+
     data.plot_GPsummary(label=1, pltt=1)
     data.plot_GPmodel(label=1, pltt=1)
     data.pickleobject()
