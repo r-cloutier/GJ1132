@@ -6,10 +6,10 @@ import lcmodel
 
 
 def lnlike(params, bjd, mag, magerr):
-    a_gp, l_gp = np.exp(params[:2])
+    a_gp, l_gp = params[:2]
     k1 = kernels.ExpSquaredKernel(l_gp)
     kernel = a_gp*k1
-    gp = george.GP(kernel, solver=george.HODLRSolver)
+    gp = george.GP(kernel)#, solver=george.HODLRSolver)
     try:
         gp.compute(bjd, magerr)
     except (ValueError, np.linalg.LinAlgError):
@@ -19,11 +19,10 @@ def lnlike(params, bjd, mag, magerr):
 
 
 # Plims are based on the LS-periodogram
-def lnprior(params, Plims=np.log(np.array((70, 160)))):
-    lna_gp, lnl_gp = params[:2]
-    P_low, P_upp = np.exp(Plims)
-    As, Ac, Prot = params[2:]
-    if -20 < lna_gp < 20 and -20 < lnl_gp < 20 and \
+def lnprior(params, Plims=np.array((0, 300))):
+    a_gp, l_gp, As, Ac, Prot = params
+    P_low, P_upp = Plims
+    if 0 < a_gp and Prot < l_gp < 3e3 and \
        -.05 < As < .05 and -.05 < Ac < .05 and \
        P_low < Prot < P_upp:
         return 0.0
@@ -41,12 +40,12 @@ def run_emcee_gp(params, bjd, mag, magerr, nsteps=2000, burnin=500,
 
     # Initialize walkers in the parameter space
     ndim = len(params)
-    p0=[params + 1e-4*np.random.randn(ndim) for i in range(nwalkers)]
+    p0=[params + 1e-5*np.random.randn(ndim) for i in range(nwalkers)]
     
     # Initialize sampler
     args = (bjd, mag, magerr)
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=args)
-    
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=args, a=1.8)
+
     print 'Running first Burnin (GP)...'
     t0=time.time()
     p0,_,_ = sampler.run_mcmc(p0, int(burnin/2))

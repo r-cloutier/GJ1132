@@ -9,6 +9,7 @@ from george import kernels
 import emcee
 import cPickle as pickle
 from PyAstronomy.pyasl import foldAt
+from PyAstronomy.pyasl import planck
 import glob
 import time
 #import rvs

@@ -19,7 +19,7 @@ class MEarthphotometry:
         self.Prot = Prot
         self.GPonly = GPonly
         if thetagp == None:
-            thetagp = np.exp(np.array((-11,5,.1,np.log(125),.02,.02,125)))
+            thetagp = np.array((1e-5,4e4,1e-1,127,.02,.02,125))
         else:
             thetagp = thetagp
         if self.GPonly:
@@ -30,12 +30,12 @@ class MEarthphotometry:
         # Get MEarth photometric data
         d = np.loadtxt('data/2MASSJ10145184-4709244_tel13_2014-2015.txt')
         self.bjd = d[:,0]
-        self.mag = d[:,1]
+        self.mag = d[:,18]  # corrected differential magnitude
         self.emag = d[:,2]
         self.mag0 = d[:,4]  # zero-point mag (mag0 < -0.5 are suspicious)
         self.CM = d[:,17]   # common-mode; c(t)
-                
-        self.bjdbin()
+        
+        #self.bjdbin()
         self.trimnbin()
         
 
@@ -82,7 +82,7 @@ class MEarthphotometry:
         self.magtrimbin  = magbin[good]
         self.emagtrimbin = emagbin[good]
 
-    
+	    
     def compute_periodogram(self):
         '''Compute the Lomb-Scargle periodogram for the light curve 
         using the Systemic software.'''
@@ -112,6 +112,29 @@ class MEarthphotometry:
         os.system('rm peaks.dat')
 
         
+    def estimate_RVpert(self, Tstar=3270., dTspot=600, VsinI=2.):
+        '''Estimate the radial velocity perturbation (m/s) from starspots 
+        from the star's light curve which is assumed to be due to the 
+        rotation of said spots. The simplified conversion equation is
+        Eq 10 in Dumusque et al 2014 (SOAP paper).
+        
+        Tstar = effective T of GJ1132 (K)
+        dTspot = T difference between the stellar photosphere and the 
+        starspot.
+        VsinI = projected stellar rotation velocity of GJ1132 (actually an 
+        upper limit from Berta-Thompson etal 2015)'''
+        # Compute the fractional starspot coverage; F(t)
+        wlnm = 700.
+        Bstar = planck(Tstar, lam=wlnm*1e-9)
+        Bspot = planck(Tstar-dTspot, lam=wlnm*1e-9)
+        self.fluxtrimbin = 10**(-.4*self.magtrimbin)
+        self.Ftrimbin = Bstar/(Bstar-Bspot) * (1-self.fluxtrimbin)
+
+        # Use idealized Eq 10 to compute RV perturbation from spots (m/s)
+        self.dRVtrimbin = self.Ftrimbin * (1.83 + 9.52*VsinI + 
+                                           .79*VsinI**2 - .04*VsinI**3)
+
+        
     def optimize(self, p0=None):
         '''Fit a three-parameter sinusoid model to the light curve.'''
         from scipy.optimize import curve_fit
@@ -132,7 +155,7 @@ class MEarthphotometry:
         else:
             import GPsinerot as gps
         # First pass
-        samples,lnprobs,vals=gps.run_emcee_gp(self.thetagp, 
+        samples,lnprobs,vals=gps.run_emcee_gp(np.log(self.thetagp), 
                                               self.bjdtrimbin,
                                               self.magtrimbin, 
                                               self.emagtrimbin,
@@ -144,7 +167,13 @@ class MEarthphotometry:
         self.gpvals = vals
 
         # Get best-fit parameters
-        nparam = self.gpsamples.shape[1]
+        results = np.array(map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
+                               zip(*np.percentile(samples, [16, 50, 84],
+                                                  axis=0))))
+        self.hyperparams = results[:,0]
+        self.mcmcfullresults = results
+
+        '''nparam = self.gpsamples.shape[1]
         params = np.zeros(nparam)
         for i in range(nparam):
             y,x,p = plt.hist(self.gpsamples[:,i], bins=40)
@@ -157,7 +186,10 @@ class MEarthphotometry:
         else:
             self.hyperparams = params[:2]
             self.mcmcparams  = params[2:]
-        
+        print self.thetagp
+        print self.hyperparams'''
+
+
 
     def plot_periodogram(self, label=False, pltt=False):
         '''Plot the periodogram along with the of its significant 
@@ -214,11 +246,11 @@ class MEarthphotometry:
         '''Plot the lightcurve and the best-fit (most likely) GP model.'''
         if self.GPonly:
             # Compute GP model
-            a_gp, l_gp, G_gp, P_gp = self.hyperparams #np.exp(self.hyperparams)
+            a_gp, l_gp, G_gp, P_gp = self.hyperparams
             k1 = kernels.ExpSquaredKernel(l_gp)
             k2 = kernels.ExpSine2Kernel(G_gp, P_gp)
             kernel = a_gp*k1*k2
-            gp = george.GP(kernel, solver=george.HODLRSolver)
+            gp = george.GP(kernel)
             gp.compute(self.bjdtrimbin, self.emagtrimbin)
             x = np.linspace(min(self.bjd), max(self.bjd), 3e2)
             mu, cov = gp.predict(self.magtrimbin, x)
@@ -274,14 +306,11 @@ if __name__ == '__main__':
     data = MEarthphotometry(outsuffix='testdummy_gponly', GPonly=1) 
 
     # Try and find periodicities via LS-periodogram
-    #data.compute_periodogram()
-    #data.plot_periodogram(label=1, pltt=0)
+    data.compute_periodogram()
+    data.plot_periodogram(label=1, pltt=1)
     
     # Fit stuff
-    data.runqpgp(nsteps=1000, burnin=200, nwalkers=36)
-    data
-
-
+    data.runqpgp(nsteps=1000, burnin=500, nwalkers=36)
     data.plot_GPsummary(label=1, pltt=1)
     data.plot_GPmodel(label=1, pltt=1)
     data.pickleobject()
