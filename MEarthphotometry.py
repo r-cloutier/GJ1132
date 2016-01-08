@@ -28,7 +28,8 @@ class MEarthphotometry:
             self.thetagp = thetagp[np.array((0,1,4,5,6))]
     
         # Get MEarth photometric data
-        d = np.loadtxt('data/2MASSJ10145184-4709244_tel13_2014-2015.txt')
+	fname = glob.glob('data/2MASS*')
+        d = np.loadtxt(fname[0])
         self.bjd = d[:,0]
         self.mag = d[:,18]  # corrected differential magnitude
         self.emag = d[:,2]
