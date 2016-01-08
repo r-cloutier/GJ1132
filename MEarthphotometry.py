@@ -23,10 +23,12 @@ class MEarthphotometry:
         else:
             thetagp = thetagp
         if self.GPonly:
-            self.thetagp = thetagp[:4]
+            self.thetagp = np.log(thetagp[:4])
         else:
-            self.thetagp = thetagp[np.array((0,1,4,5,6))]
-    
+            thetagp = thetagp[np.array((0,1,4,5,6))]
+            thetagp[:2] = np.log(thetagp[:2])
+            self.thetagp = thetagp
+
         # Get MEarth photometric data
 	fname = glob.glob('data/2MASS*')
         d = np.loadtxt(fname[0])
@@ -156,7 +158,8 @@ class MEarthphotometry:
         else:
             import GPsinerot as gps
         # First pass
-        samples,lnprobs,vals=gps.run_emcee_gp(np.log(self.thetagp), 
+        print self.thetagp
+        samples,lnprobs,vals=gps.run_emcee_gp(self.thetagp, 
                                               self.bjdtrimbin,
                                               self.magtrimbin, 
                                               self.emagtrimbin,
@@ -168,12 +171,22 @@ class MEarthphotometry:
         self.gpvals = vals
 
         # Get best-fit parameters
-        results = np.array(map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
-                               zip(*np.percentile(samples, [16, 50, 84],
-                                                  axis=0))))
-        self.hyperparams = results[:,0]
-        self.mcmcfullresults = results
-
+        if self.GPonly:
+            results = np.array(map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
+                                   zip(*np.percentile(np.exp(self.gpsamples), 
+                                                      [16, 50, 84], axis=0))))
+            self.hyperparams = results[:,0]
+            self.mcmcfullresults = results
+        else:
+            results = np.array(map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
+                                   zip(*np.percentile(np.exp(self.gpsamples[:,:2]), 
+                                                      [16, 50, 84], axis=0))))
+            self.hyperparams = results[:,0]
+            self.mcmcfullresults = results
+            results = np.array(map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
+                                   zip(*np.percentile(self.gpsamples[:,2:], 
+                                                      [16, 50, 84], axis=0))))
+            self.mcmcparams = results[:,0] 
         '''nparam = self.gpsamples.shape[1]
         params = np.zeros(nparam)
         for i in range(nparam):
@@ -259,7 +272,7 @@ class MEarthphotometry:
             
         else:
             # Compute GP model
-            a_gp, l_gp = self.hyperparams #np.exp(self.hyperparams)
+            a_gp, l_gp = self.hyperparams
             k1 = kernels.ExpSquaredKernel(l_gp)
             kernel = a_gp*k1
             gp = george.GP(kernel, solver=george.HODLRSolver)
@@ -304,7 +317,7 @@ class MEarthphotometry:
 
 
 if __name__ == '__main__':
-    data = MEarthphotometry(outsuffix='testdummy_gponly', GPonly=1) 
+    data = MEarthphotometry(outsuffix='testdummy_gpplussine', GPonly=0) 
 
     # Try and find periodicities via LS-periodogram
     data.compute_periodogram()

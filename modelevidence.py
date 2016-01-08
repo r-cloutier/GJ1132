@@ -9,7 +9,7 @@ from MEarthphotometry import *
 class modelevidence:
 
     def __init__(self, 
-                 file0='pickles/GJ1132_testdummy_gpplussine_lc1',
+                 file0='pickles/GJ1132_testdummy_gpplussine',
                  file1='pickles/GJ1132_testdummy_gponly'):
         
         # Add stuff
