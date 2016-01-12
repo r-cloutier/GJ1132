@@ -17,3 +17,4 @@ import time
 from scipy.stats import ks_2samp
 from scipy.interpolate import interp1d
 from matplotlib.colors import LogNorm
+import pyfits

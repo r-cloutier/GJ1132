@@ -9,7 +9,7 @@ import lcmodel
 class MEarthphotometry:
     
     def __init__(self, outsuffix='', Prot=125., thetagp=None,
-                 GPonly=True):
+                 GPonly=True, Rs=.207, T0=2457184.55786):
         '''GPonly = boolean indicating whether or not to model the light
         curve as a QP GP or a GP (prbly a squared exponential) plus a 
         sine wave.''' 
@@ -17,6 +17,8 @@ class MEarthphotometry:
         # Add obvious stuff
         self.outsuffix = outsuffix
         self.Prot = Prot
+        self.Rs = Rs
+	self.T0 = T0
         self.GPonly = GPonly
         if thetagp == None:
             thetagp = np.array((1e-5,4e4,1e-1,127,.02,.02,125))
@@ -137,7 +139,113 @@ class MEarthphotometry:
         self.dRVtrimbin = self.Ftrimbin * (1.83 + 9.52*VsinI + 
                                            .79*VsinI**2 - .04*VsinI**3)
 
+
+    def estimate_RVpert2(self, delta=0, I=90, dVc=None, kappa=None):
+        '''Estimate the RV perturbation (m/s) from rotating star spots in a 
+        simplfied model from Aigrain et al 2012. The rotational effect 
+        Eq 4 and the convective blueshift suppression Eq 5 are included.
         
+        delta = assumed spot latitude (deg)
+        I = inclination of the star wrt the line-of-sight (deg)
+        dVc = difference in velocity of starspot and photosphere (m/s) 
+              (default: estimated from a SOAP simulation)
+        kappa = surface area ratio of unspotted photosphere to starspot
+                (default: estimated from SOAP simulation)
+        '''
+        # Get the RV perturbation due to flux suppression (m/s)
+        #flux = 10**(-.4*self.magtrimbin)
+        fluxmean = 10**(-.4*self.model)
+        flux3sig = 10**(-.4*(self.model+3*self.modelerr))
+        fluxm3sig = 10**(-.4*(self.model-3*self.modelerr))
+        fluxpredmean = 10**(-.4*self.predmodel)
+        fluxpred1sig = 10**(-.4*(self.predmodel+self.predmodelerr))
+        Veq = 2*np.pi*self.Rs*695500e3/(self.Prot*24*60*60)  # m/s
+        # Convert to phase with an approx T0 (i.e. where mag == 0)
+        T0 = self.modelbjd[np.abs(self.model) == \
+                           np.min(np.abs(self.model))]
+        phi = (self.modelbjd-T0)/self.Prot
+        phipred = (self.predbjd-T0)/self.Prot
+        self.dRV_rotmean = -(1-fluxmean) * Veq * np.cos(np.deg2rad(delta)) * \
+                           np.sin(phi) * np.sin(np.deg2rad(I))
+        self.dRV_rot3sig = -(1-flux3sig) * Veq * np.cos(np.deg2rad(delta)) * \
+                           np.sin(phi) * np.sin(np.deg2rad(I))
+        self.dRV_rotm3sig = -(1-fluxm3sig) * Veq * np.cos(np.deg2rad(delta)) * \
+                            np.sin(phi) * np.sin(np.deg2rad(I))
+        self.dRV_rotpredmean = -(1-fluxpredmean) * Veq * np.cos(np.deg2rad(delta)) * \
+                               np.sin(phipred) * np.sin(np.deg2rad(I))
+        self.dRV_rotpred1sig = -(1-fluxpred1sig) * Veq * np.cos(np.deg2rad(delta)) * \
+                               np.sin(phipred) * np.sin(np.deg2rad(I))
+
+        # Get dVc and kappa from SOAP simulation of one central starspot
+        if dVc == None:
+            # Get files
+            fnames = glob.glob('/home/ryan/Research/SOAP_2/outputs/CCF_PROT=125.00_i=90.00_lon=(180.0,0.0,0.0,0.0)_lat=(0.0,0.0,0.0,0.0)_size=(0.1000,0.0000,0.0000,0.0000)/fits/*fits')
+            nfiles = len(fnames)
+            RV_BC = np.zeros(nfiles)
+            for i in range(nfiles):
+                hdr = pyfits.getheader(fnames[i])
+                RV_BC[i] = hdr.get('RV_BC')
+            self.dVc = np.max(np.abs(RV_BC))*1e3  # m/s
+            self.kappa = 1./hdr.get('SIZE1')
+
+        # Get the RV perturbation due to suppresion of CBS
+        cosB = np.cos(phi) * np.cos(np.deg2rad(delta)) * \
+               np.sin(np.deg2rad(I)) + np.sin(np.deg2rad(delta)) * \
+               np.cos(np.deg2rad(I))
+        cosBpred = np.cos(phipred) * np.cos(np.deg2rad(delta)) * \
+                   np.sin(np.deg2rad(I)) + np.sin(np.deg2rad(delta)) * \
+                   np.cos(np.deg2rad(I))
+        self.dRV_cmean = (1-fluxmean) * self.dVc * self.kappa * cosB
+        self.dRV_c3sig = (1-flux3sig) * self.dVc * self.kappa * cosB
+        self.dRV_cm3sig = (1-fluxm3sig) * self.dVc * self.kappa * cosB
+        self.dRV_cpredmean = (1-fluxpredmean) * self.dVc * self.kappa * cosBpred
+        self.dRV_cpred1sig = (1-fluxpred1sig) * self.dVc * self.kappa * cosBpred
+        self.dRVtotmean = self.dRV_rotmean + self.dRV_cmean
+        self.dRVtot3sig = self.dRV_rot3sig + self.dRV_c3sig
+        self.dRVtotm3sig = self.dRV_rotm3sig + self.dRV_cm3sig
+        self.dRVtotpredmean = self.dRV_rotpredmean + self.dRV_cpredmean
+        self.dRVtotpred1sig = self.dRV_rotpred1sig + self.dRV_cpred1sig
+
+
+    def get_model(self):
+        '''Compute the QP GP model after running the mcmc.'''
+        if self.GPonly:
+            # Compute GP model
+            a_gp, l_gp, G_gp, P_gp = self.hyperparams
+            k1 = kernels.ExpSquaredKernel(l_gp)
+            k2 = kernels.ExpSine2Kernel(G_gp, P_gp)
+            kernel = a_gp*k1*k2
+            gp = george.GP(kernel)
+            gp.compute(self.bjdtrimbin, self.emagtrimbin)
+            x = np.linspace(min(self.bjd), max(self.bjd), 5e2)
+            mu, cov = gp.predict(self.magtrimbin, x)
+            std = np.sqrt(np.diag(cov))
+            xpred = np.linspace(max(self.bjd), max(self.bjd)+600, 1e3)
+            mupred, covpred = gp.predict(self.magtrimbin, xpred)
+            stdpred = np.sqrt(np.diag(covpred))   
+        else:
+            # Compute GP model
+            a_gp, l_gp = self.hyperparams
+            k1 = kernels.ExpSquaredKernel(l_gp)
+            kernel = a_gp*k1
+            gp = george.GP(kernel, solver=george.HODLRSolver)
+            gp.compute(self.bjdtrimbin, self.emagtrimbin)
+            x = np.linspace(min(self.bjd), max(self.bjd), 3e2)
+            #mu, cov = gp.predict(self.magtrimbin, x)
+            modelsmall = lcmodel.get_lc1(self.mcmcparams, self.bjdtrimbin)
+            modellarge = lcmodel.get_lc1(self.mcmcparams, x)
+            samples = gp.sample_conditional(self.magtrimbin - modelsmall, 
+                                            x, size=100)
+            mu = np.mean(samples, axis=0) + modellarge
+            std = np.std(samples, axis=0) + modellarge
+        self.modelbjd = x
+        self.model = mu
+        self.modelerr = std
+        self.predbjd = xpred
+        self.predmodel = mupred
+        self.predmodelerr = stdpred
+
+
     def optimize(self, p0=None):
         '''Fit a three-parameter sinusoid model to the light curve.'''
         from scipy.optimize import curve_fit
@@ -230,11 +338,32 @@ class MEarthphotometry:
         plt.subplots_adjust(bottom=.12)
         if label:
             plt.savefig('plots/periodogram_'+self.outsuffix+'.png')
+            plt.savefig('plots/periodogram_'+self.outsuffix+'.eps', format='eps')
         if pltt:
             plt.show()
         plt.close('all')
 
+
+    def plot_RVpert(self, label=False, pltt=False):
+        '''Plot the estimated RV perturbation due to starspots (convBS + 
+        flux suppression).'''
+        plt.plot(self.modelbjd, self.dRV_rotmean, 'b-', label='Flux')
+        plt.plot(self.modelbjd, self.dRV_cmean, 'g-', label='Conv. blueshift')
+        plt.plot(self.modelbjd, self.dRVtotmean, 'k-', lw=2.5, label='Total')
+        plt.fill_between(self.modelbjd, self.dRVtot3sig, self.dRVtotm3sig, color='k', alpha=.4)
         
+        plt.xlabel('BJD')
+        plt.ylabel('$\Delta$RV (m/s)')
+        plt.minorticks_on()
+        plt.legend(loc='upper right')
+        if label:
+            plt.savefig('plots/dRV_'+self.outsuffix+'.png')
+            plt.savefig('plots/dRV_'+self.outsuffix+'.eps', format='eps')
+        if pltt:
+            plt.show()
+        plt.close('all')
+
+
     def plot_GPsummary(self, label=False, pltt=False):
         '''Make a corner plot of the GP parameter posteriors and the evolution 
         of the lnprobability = lnlikelihood + lnprior'''
@@ -246,11 +375,13 @@ class MEarthphotometry:
         plt.ylabel('lnlikelihood')
         if label:
             plt.savefig('plots/gplnprob_'+self.outsuffix+'.png')
-        
+            plt.savefig('plots/gplnprob_'+self.outsuffix+'.eps', format='eps')      
+
         # Next plot
         corner.corner(self.gpsamples, bins=40)
         if label:
             plt.savefig('plots/gptri_'+self.outsuffix+'.png')
+            plt.savefig('plots/gptri_'+self.outsuffix+'.eps', format='eps')
         if pltt:
             plt.show()
         plt.close('all')
@@ -258,54 +389,47 @@ class MEarthphotometry:
     
     def plot_GPmodel(self, label=False, pltt=False):
         '''Plot the lightcurve and the best-fit (most likely) GP model.'''
-        if self.GPonly:
-            # Compute GP model
-            a_gp, l_gp, G_gp, P_gp = self.hyperparams
-            k1 = kernels.ExpSquaredKernel(l_gp)
-            k2 = kernels.ExpSine2Kernel(G_gp, P_gp)
-            kernel = a_gp*k1*k2
-            gp = george.GP(kernel)
-            gp.compute(self.bjdtrimbin, self.emagtrimbin)
-            x = np.linspace(min(self.bjd), max(self.bjd), 3e2)
-            mu, cov = gp.predict(self.magtrimbin, x)
-            std = np.sqrt(np.diag(cov))
-            
-        else:
-            # Compute GP model
-            a_gp, l_gp = self.hyperparams
-            k1 = kernels.ExpSquaredKernel(l_gp)
-            kernel = a_gp*k1
-            gp = george.GP(kernel, solver=george.HODLRSolver)
-            gp.compute(self.bjdtrimbin, self.emagtrimbin)
-            x = np.linspace(min(self.bjd), max(self.bjd), 3e2)
-            #mu, cov = gp.predict(self.magtrimbin, x)
-            modelsmall = lcmodel.get_lc1(self.mcmcparams, self.bjdtrimbin)
-            modellarge = lcmodel.get_lc1(self.mcmcparams, x)
-            samples = gp.sample_conditional(self.magtrimbin - modelsmall, 
-                                            x, size=100)
-            mu = np.mean(samples, axis=0) + modellarge
-            std = np.std(samples, axis=0) + modellarge
-        self.modelbjd = x
-        self.model = mu
-        self.modelerr = std
-
         # Plot data and model
         plt.close('all')
-        plt.plot(self.bjdtrim, self.magtrim, 'k.', alpha=.1)
-        plt.errorbar(self.bjdtrimbin, self.magtrimbin, self.emagtrimbin, 
-                     fmt='bo')
-        plt.plot(x, mu, 'g-', lw=2)
-        plt.plot(x, mu+std, 'g--', lw=1.5)
-        plt.plot(x, mu-std, 'g--', lw=1.5)
+        plt.figure(figsize=(12,5))
+    	t0 = min(self.bjd)
+        plt.plot(self.bjdtrim-t0, self.magtrim, 'k.', alpha=.1)
+        plt.errorbar(self.bjdtrimbin-t0, self.magtrimbin, self.emagtrimbin, 
+                     fmt='bo', capsize=0)
+        plt.plot(self.modelbjd-t0, self.model, 'g-', lw=2, label='QP GP')
+        plt.plot(self.modelbjd-t0, self.model-3*self.modelerr, 'g-', lw=.7)
+        plt.plot(self.modelbjd-t0, self.model+3*self.modelerr, 'g-', lw=.7)
+        plt.fill_between(self.modelbjd-t0, self.model-3*self.modelerr, 
+                         self.model+3*self.modelerr, color='g', alpha=.5)
 
+        # Plot prediction
+        plt.plot(self.predbjd-t0, self.predmodel, 'k-', lw=2, 
+                 label='GP prediction')
+        plt.fill_between(self.predbjd-t0, self.predmodel-3*self.predmodelerr, 
+                         self.predmodel+3*self.predmodelerr, color='k',
+                         alpha=.5)
+        
         plt.gca().invert_yaxis()
-        plt.xlabel('BJD')
+        plt.xlabel('BJD - %.5f'%t0)
         plt.ylabel('Differential Magnitude')
+        #plt.legend(loc='lower center')
+        plt.xlim((-10,max(self.predbjd)-t0))
+	plt.ylim((.025,-.025))
+	plt.minorticks_on()
+	plt.subplots_adjust(bottom=.15, top=.93)
         if label:
             plt.savefig('plots/gpmodel_'+self.outsuffix+'.png')
+            plt.savefig('plots/gpmodel_'+self.outsuffix+'.eps', format='eps')
         if pltt:
             plt.show()
         plt.close('all')
+
+    
+    def saveGP4RV(self):
+        '''Save the GP samples to be used by other GPs including one to 
+        model the exising HARPS observations.'''
+        np.savetxt('../HARPS/data/QPGPsamples_'+self.outsuffix, self.gpsamples,
+                   delimiter='\t', fmt='%.6e', header='lna, lnl, lnG, lnP')
 
 
     def pickleobject(self):
@@ -317,16 +441,26 @@ class MEarthphotometry:
 
 
 if __name__ == '__main__':
-    data = MEarthphotometry(outsuffix='testdummy_gpplussine', GPonly=0) 
+    #data = MEarthphotometry(outsuffix='testdummy_gponly', GPonly=1) 
 
     # Try and find periodicities via LS-periodogram
-    data.compute_periodogram()
-    data.plot_periodogram(label=1, pltt=1)
+    #data.compute_periodogram()
+    #data.plot_periodogram(label=1, pltt=1)
+    #data.runqpgp(nsteps=1000, burnin=500, nwalkers=36)
+    #data.get_model()
+    #data.estimate_RVpert2()
+    #data.plot_GPsummary(label=1, pltt=1)
+    #data.plot_GPmodel(label=1, pltt=1)
+    #data.pickleobject()    
+    #data/saveGP4RV()
     
-    # Fit stuff
-    data.runqpgp(nsteps=1000, burnin=500, nwalkers=36)
-    data.plot_GPsummary(label=1, pltt=1)
-    data.plot_GPmodel(label=1, pltt=1)
-    data.pickleobject()
+    f=open('pickles/GJ1132_testdummy_gponly', 'rb')
+    data=pickle.load(f)
+    f.close()
 
-    
+    #data.T0 = 2457184.55786
+    data.plot_periodogram(label=1, pltt=0)
+    data.plot_GPsummary(label=1, pltt=0)
+    data.plot_GPmodel(label=1, pltt=1)
+    data.plot_RVpert(label=1, pltt=0)
+    data.pickleobject()
